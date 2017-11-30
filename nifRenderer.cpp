@@ -15,6 +15,10 @@
 #include <GL/glut.h>
 #endif
 
+//DDSLoader
+#include "DDSLoader.h"
+
+//niflib includes
 #include "niflib/include/niflib.h"
 #include "niflib/include/obj/NiNode.h"
 #include "niflib/include/obj/NiSkinInstance.h"
@@ -394,6 +398,7 @@ int main(int argc,char* argv[])
     //  Tell GLUT to call "reshape" when the window is resized
     glutReshapeFunc(reshape);
     //  Tell GLUT to call "special" when an arrow key is pressed
+    loadDDS("helmetplate.dds");
     glutSpecialFunc(special);
     glutKeyboardFunc(key);
     glutDisplayFunc(display);

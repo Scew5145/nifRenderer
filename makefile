@@ -23,6 +23,9 @@ endif
 CLEAN=rm -f $(EXE) *.o *.a
 endif
 
+# Dependencies
+# DDSLoader: DDSLoader.cpp DDSLoader.h
+
 # Compile rules
 .c.o:
 	gcc -c $(CFLG) $<
@@ -30,7 +33,7 @@ endif
 	g++ -c $(CFLG) $< 
 
 #  Link
-nifRenderer:nifRenderer.o
+nifRenderer:nifRenderer.o DDSLoader.o
 	g++ -O3 -o $@ $^   $(LIBS) -Lniflib/build/ -lniflib
 
 #  Clean
