@@ -25,12 +25,17 @@
 #include "niflib/include/obj/NiTriShape.h"
 #include "niflib/include/obj/NiTriShapeData.h"
 #include "niflib/include/obj/BSLightingShaderProperty.h"
+#include "niflib/include/obj/BSShaderTextureSet.h"
 
 #define Cos(th) cos(3.1415926/180*(th))
 #define Sin(th) sin(3.1415926/180*(th))
 
 using namespace Niflib;
 using namespace std;
+
+unsigned int texture;
+
+
 
 int light=1;      //  Lighting
 
@@ -75,7 +80,11 @@ void Project(double fov,double asp,double dim)
     glLoadIdentity();
 }
 
-
+struct triTextureData{
+    //This is a struct for mostly holding the texture IDs for each trishape.
+    vector<string> textureFileName;
+    vector<unsigned int> textureID;
+};
 
 /*
  * niFileController Class
@@ -86,9 +95,10 @@ class nifFileController{
 private:
     string fileName;
     NiNodeRef root;
-    void drawTriShape(NiTriShapeRef tShape){
-        //cout << "Rendering SubObject:\n";
-        //cout << tShape->asString();
+    vector<triTextureData> triTextures;
+    //Most files will only use the 0,1,4, and 5 slots
+    vector<unsigned int> textureIDs;
+    void drawTriShape(NiTriShapeRef tShape, int triID){
         
         /* 
          * Attributes of a NiTriShape and it's Children:
@@ -101,19 +111,37 @@ private:
          *          Normals are stored as Vector3s, and their index lines up with the index of the verticies
          * 2. BSLightingShaderProperty, 
          *      the place where stuff like specular color, texture map mode, etc. are stored
+         *      Access as GetBSProperty(0)
          * 2a.NiAlphaProperty
          *      this node is for storing alpha values of stuff I don't really care about for this project (yet).
+         *      Accessed as GetBSProperty(1)
          * There's also a few other children of the node that don't matter for this project - most related to animation or ingame collision.
          * Within the NiTriShape node itself, Translation, Rotation, and Scale are notated.
          */
         NiTriShapeDataRef tData = DynamicCast<NiTriShapeData>(tShape->GetData());
+        
         BSLightingShaderPropertyRef lsProperties = DynamicCast<BSLightingShaderProperty>(tShape->GetBSProperty(0));
         
+        //Get the texture info
+        
+        
+        //Get the 3d data
         vector<Triangle> tris = tData->GetTriangles();
         vector<Vector3> verts = tData->GetVertices();
         vector<Vector3> norms = tData->GetNormals();
+        vector<TexCoord> texCoords = tData->GetUVSet(0);
+        //Set up the texture stuff if the trishape has a texture
+        if(triTextures[triID].textureFileName.size() != 0){
+            glTexEnvi(GL_TEXTURE_ENV,GL_TEXTURE_ENV_MODE,GL_MODULATE);
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+            glEnable(GL_TEXTURE_2D);
+            //Bind the diffuse texture (which will always be the first textureID)
+            glBindTexture(GL_TEXTURE_2D,triTextures[triID].textureID[0]);
+        }
         
-        //Set up openGL to draw triangles and stuff
+        glShadeModel(GL_SMOOTH);
+        
+        //Set up openGL to draw tris
         glBegin(GL_TRIANGLES);
         glColor3f(1,1,1);
         //cout << "starting forloop\n";
@@ -126,27 +154,23 @@ private:
             Vector3 normB = norms[triIterator[1]];
             Vector3 normC = norms[triIterator[2]];
             
+            glTexCoord2d(texCoords[triIterator[0]].u, texCoords[triIterator[0]].v);
             glNormal3d(normA[0], normA[1], normA[2]);
             glVertex3d(vertA[0],vertA[1],vertA[2]);
             
+            glTexCoord2d(texCoords[triIterator[1]].u, texCoords[triIterator[1]].v);
             glNormal3d(normB[0], normB[1], normB[2]);
             glVertex3d(vertB[0],vertB[1],vertB[2]);
             
+            glTexCoord2d(texCoords[triIterator[2]].u, texCoords[triIterator[2]].v);
             glNormal3d(normC[0],normC[1], normC[1]);
             glVertex3d(vertC[0],vertC[1],vertC[2]);
             //cout << vertA << "\n";
         }
+        glDisable(GL_TEXTURE_2D);
         //cout << "done \n";
         glEnd();
         
-        //TODO: Finish this
-        //Start with setting up lighting properties for the TriShape using lsProperties
-        //Next, sequentually render the object by iterating through the Triangles vector.
-        //Ex:
-        // Normal[Tri[0]] Vert[Tri[0]]
-        // Normal[Tri[1]] Vert[Tri[1]]
-        // Normal[Tri[2]] Vert[Tri[2]]
-        // When this is finished, look in to applying textures
 
     }
 public:
@@ -155,11 +179,13 @@ public:
         //cout << "We'll be rendering the following object: \n";
         //cout << root->asString();
         vector<NiAVObjectRef> children = root->GetChildren();
+        int counter = 0;
         //If the child is a NiTriShape, pass it to the private function to parse and render the object.
         for(int i = 0; i < children.size(); i++){
             if(children[i]->GetType().IsSameType(NiTriShape::TYPE)){
                 //cout << "Rendering " << i << "\n";
-                drawTriShape(DynamicCast<NiTriShape>(children[i]));
+                drawTriShape(DynamicCast<NiTriShape>(children[i]), counter);
+                counter++;
             }
         }
         //For now, trishapes will only be rendered from the first level of children.
@@ -171,8 +197,46 @@ nifFileController::nifFileController(string _filename){
     fileName = _filename;
     
     root = DynamicCast<NiNode>(ReadNifTree(fileName));
+    //TODO: append all present textures to the object's textureList. For now, static for testing purposes.
+    vector<NiAVObjectRef> children = root->GetChildren();
+    
+    
+    for(int i = 0; i < children.size(); i++){
+        if(children[i]->GetType().IsSameType(NiTriShape::TYPE)){
+            //Grab the texture and append it to the texture list.
+            triTextureData texDataIterator;
+            
+            //This looks messy but I'm just getting the shader property
+            BSLightingShaderPropertyRef lsProperties = DynamicCast<BSLightingShaderProperty>(DynamicCast<NiTriShape>(children[i])->GetBSProperty(0));
+            
+            if(lsProperties != NULL){
+                texDataIterator.textureFileName = lsProperties->GetTextureSet()->GetTextures();
+                cout << texDataIterator.textureFileName.size() << endl;
+                //Generate each TriShape's textures
+                for(int j = 0; j < texDataIterator.textureFileName.size(); j++){
+                    cout << texDataIterator.textureFileName[j] << endl;
+                    if(strcmp(texDataIterator.textureFileName[j].c_str(), "") == 0){
+                        texDataIterator.textureID.push_back(0);
+                    }else{
+                        texDataIterator.textureID.push_back(loadDDS(texDataIterator.textureFileName[j].c_str()));
+                    }
+                    cout << "texID for iterator:" << texDataIterator.textureID[j] << endl;
+                    cout << "filename: " <<  texDataIterator.textureFileName[j] << endl;
+                    
+                }
+            }else{
+                cout << "No texture set. Ignoring." << endl;
+            }
+            triTextures.push_back(texDataIterator);
+            cout << "size" << triTextures.size() << endl;
+            
+        }
+    }
+    //textureList.push_back(loadDDS("helmetplate_n.dds"));
 }
 
+
+vector<nifFileController> nifFiles;
 
 static void Vertex(double th,double ph)
 {
@@ -193,7 +257,7 @@ static void Vertex(double th,double ph)
 static void ball(double x,double y,double z,double r)
 {
     int th,ph;
-    float yellow[] = {1.0,1.0,0.0,1.0};
+    float yellow[] = {1.0,1.0,1.0,1.0};
     float Emission[]  = {0.0,0.0,0.01*emission,1.0};
     //  Save transformation
     glPushMatrix();
@@ -221,9 +285,6 @@ static void ball(double x,double y,double z,double r)
 }
 
 
-
-//A quick setup for a nif file
-nifFileController helmetFile = nifFileController("Helmet.nif");
 
 void idle()
 {
@@ -297,6 +358,8 @@ void key(unsigned char ch,int x,int y)
     else if (ch == 'a' || ch == 'A')
         axes = 1-axes;
     //  Tell GLUT it is necessary to redisplay the scene
+    else if (ch == 'r' || ch == 'r')
+        nifFiles.push_back(nifFileController("Helmet.nif"));
     glutPostRedisplay();
 }
 
@@ -310,7 +373,6 @@ void display()
     glClear(GL_COLOR_BUFFER_BIT|GL_DEPTH_BUFFER_BIT);
     //  Enable Z-buffering in OpenGL
     glEnable(GL_DEPTH_TEST);
-    
     //  Undo previous transformations
     glLoadIdentity();
     //  Perspective - set eye position
@@ -349,8 +411,10 @@ void display()
     else
         glDisable(GL_LIGHTING);
     //  Draw scene
-    
-    helmetFile.renderObjectTrishapes();
+    for(int i = 0; i < nifFiles.size(); i++){
+        nifFiles[i].renderObjectTrishapes();
+    }
+    //helmetFile.renderObjectTrishapes();
     //  Draw axes - no lighting from here on
 
     glColor3f(1,1,1);
@@ -388,21 +452,23 @@ int main(int argc,char* argv[])
     //  Initialize GLUT
     
     
+    //  Request double buffered, true color window with Z buffering at 600x600
+    glutInitDisplayMode(GLUT_RGB | GLUT_DEPTH | GLUT_DOUBLE);
     
     glutInit(&argc,argv);
     //  Create window
     glutCreateWindow("nifRenderer");
     //  Register function used to display scene
     glutInitWindowSize(600,600);
-    glutInitDisplayMode(GLUT_RGB | GLUT_DEPTH | GLUT_DOUBLE);
+    glutInitDisplayMode(GLUT_RGBA | GLUT_DEPTH | GLUT_DOUBLE);
     //  Tell GLUT to call "reshape" when the window is resized
     glutReshapeFunc(reshape);
     //  Tell GLUT to call "special" when an arrow key is pressed
-    loadDDS("helmetplate.dds");
     glutSpecialFunc(special);
     glutKeyboardFunc(key);
     glutDisplayFunc(display);
     glutIdleFunc(idle);
+    //texture = loadDDS("helmetplate.dds");
     //  Pass control to GLUT for events
     glutMainLoop();
     //  Return to OS

@@ -1,4 +1,5 @@
 #include <sstream>
+#include <stdio.h>
 #include <iostream>
 #include <fstream>
 #ifdef __APPLE__
@@ -7,20 +8,22 @@
 #include <GL/glut.h>
 #endif
 
-/*
- * Source code referenced from:
- * http://www.opengl-tutorial.org/beginners-tutorials/tutorial-5-a-textured-cube/
- *
- */
 
 GLuint loadDDS(const char * imagepath){
     
     unsigned char header[124];
     FILE *fp;
+    //std::cout << "TID :" <<  strrchr(imagepath,'\\')+1 << std::endl;
     
     fp = fopen(imagepath, "rb");
-    if (fp == NULL)
-        return 0;
+    if (fp == NULL){
+        //const char * justimagename = strrchr(imagepath,'/');
+        fp = fopen(strrchr(imagepath,'\\')+1, "rb");
+        if(fp == NULL){//If the base file name doesn't work either, just return
+            return 0;
+        }
+        
+    }
     
     char filecode[4];
     fread(filecode, 1, 4, fp);
@@ -43,6 +46,7 @@ GLuint loadDDS(const char * imagepath){
     fourCC[4] = '\0';
     unsigned char * buffer;
     unsigned int bufsize;
+    
     bufsize = mipMapCount > 1 ? linearSize * 2 : linearSize;
     buffer = (unsigned char*)malloc(bufsize * sizeof(unsigned char));
     fread(buffer, 1, bufsize, fp);
@@ -68,7 +72,6 @@ GLuint loadDDS(const char * imagepath){
     // Create one OpenGL texture
     
     GLuint textureID;
-    
     glGenTextures(1, &textureID);
     
     
@@ -86,11 +89,10 @@ GLuint loadDDS(const char * imagepath){
                                0, size, buffer + offset);
         
         offset += size;
-        width  /= 2;
-        height /= 2;
+        width = std::max(width/2, (unsigned int)1);
+        height = std::max(height/2, (unsigned int)1);
     }
-    
+    //std::cout << textureID << std::endl;
     free(buffer);
-    
     return textureID;
 }
