@@ -9,6 +9,8 @@
 
 #include <sstream>
 #include <iostream>
+#include <stdlib.h>
+#include <time.h>
 #ifdef __APPLE__
 #include <GLUT/glut.h>
 #else
@@ -43,7 +45,7 @@ int th=0;         //  Azimuth of view angle
 int ph=0;         //  Elevation of view angle
 int axes=1;       //  Display axes
 double asp=1;
-double dim=15.0;
+double dim=30.0;
 int fov=55;       //  Field of view (for perspective)
 
 
@@ -61,6 +63,8 @@ int shininess =   0;  // Shininess (power of two)
 float shiny   =   1;  // Shininess (value)
 int zh        =  90;  // Light azimuth
 float ylight  =   0;  // Elevation of light
+
+int spawncounter = 0;//Controls which thing to spawn.
 
 void Project(double fov,double asp,double dim)
 {
@@ -96,6 +100,8 @@ private:
     string fileName;
     NiNodeRef root;
     vector<triTextureData> triTextures;
+    vector< vector<float> > triTrans;
+    vector< vector<float> > triRot;
     //Most files will only use the 0,1,4, and 5 slots
     vector<unsigned int> textureIDs;
     void drawTriShape(NiTriShapeRef tShape, int triID){
@@ -130,6 +136,10 @@ private:
         vector<Vector3> verts = tData->GetVertices();
         vector<Vector3> norms = tData->GetNormals();
         vector<TexCoord> texCoords = tData->GetUVSet(0);
+        glPushMatrix();
+        glTranslated(triTrans[triID][0],triTrans[triID][1],triTrans[triID][2]);
+        glRotated(triRot[triID][0],triRot[triID][1],triRot[triID][2],triRot[triID][3]);
+        
         //Set up the texture stuff if the trishape has a texture
         if(triTextures[triID].textureFileName.size() != 0){
             glTexEnvi(GL_TEXTURE_ENV,GL_TEXTURE_ENV_MODE,GL_MODULATE);
@@ -169,6 +179,7 @@ private:
         }
         glDisable(GL_TEXTURE_2D);
         //cout << "done \n";
+        glPopMatrix();
         glEnd();
         
 
@@ -195,7 +206,7 @@ public:
 
 nifFileController::nifFileController(string _filename){
     fileName = _filename;
-    
+
     root = DynamicCast<NiNode>(ReadNifTree(fileName));
     //TODO: append all present textures to the object's textureList. For now, static for testing purposes.
     vector<NiAVObjectRef> children = root->GetChildren();
@@ -203,6 +214,18 @@ nifFileController::nifFileController(string _filename){
     
     for(int i = 0; i < children.size(); i++){
         if(children[i]->GetType().IsSameType(NiTriShape::TYPE)){
+            //Temporary random location when created
+            vector<float> randTrans;
+            randTrans.push_back((rand()%20) - 10);
+            randTrans.push_back((rand()%20) - 10);
+            randTrans.push_back((rand()%20) - 10);
+            vector<float> randRot;
+            randRot.push_back(rand()%360-180);
+            randRot.push_back((rand()%200)/200-100);
+            randRot.push_back((rand()%200)/200-100);
+            randRot.push_back((rand()%200)/200-100);
+            triRot.push_back(randRot);
+            triTrans.push_back(randTrans);
             //Grab the texture and append it to the texture list.
             triTextureData texDataIterator;
             
@@ -344,6 +367,7 @@ void reshape(int width,int height)
     glMatrixMode(GL_MODELVIEW);
     //  Undo previous transformations
     glLoadIdentity();
+    glutPostRedisplay();
 }
 
 void key(unsigned char ch,int x,int y)
@@ -358,8 +382,9 @@ void key(unsigned char ch,int x,int y)
     else if (ch == 'a' || ch == 'A')
         axes = 1-axes;
     //  Tell GLUT it is necessary to redisplay the scene
-    else if (ch == 'r' || ch == 'r')
+    else if (ch == 'r' || ch == 'r'){
         nifFiles.push_back(nifFileController("Helmet.nif"));
+    }
     glutPostRedisplay();
 }
 
@@ -412,7 +437,11 @@ void display()
         glDisable(GL_LIGHTING);
     //  Draw scene
     for(int i = 0; i < nifFiles.size(); i++){
+        glPushMatrix();
+        
         nifFiles[i].renderObjectTrishapes();
+        glPopMatrix();
+        
     }
     //helmetFile.renderObjectTrishapes();
     //  Draw axes - no lighting from here on
@@ -451,7 +480,7 @@ int main(int argc,char* argv[])
 {
     //  Initialize GLUT
     
-    
+    srand (time(NULL));
     //  Request double buffered, true color window with Z buffering at 600x600
     glutInitDisplayMode(GLUT_RGB | GLUT_DEPTH | GLUT_DOUBLE);
     
@@ -463,6 +492,7 @@ int main(int argc,char* argv[])
     glutInitDisplayMode(GLUT_RGBA | GLUT_DEPTH | GLUT_DOUBLE);
     //  Tell GLUT to call "reshape" when the window is resized
     glutReshapeFunc(reshape);
+    
     //  Tell GLUT to call "special" when an arrow key is pressed
     glutSpecialFunc(special);
     glutKeyboardFunc(key);
