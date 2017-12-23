@@ -2,8 +2,6 @@
 #include <stdio.h>
 #include <iostream>
 #include <fstream>
-#include <string>
-#include <cstring>
 #ifdef __APPLE__
 #include <GLUT/glut.h>
 #else
@@ -11,15 +9,15 @@
 #endif
 
 
-//This used http://www.oldunreal.com/editing/s3tc/ARB_texture_compression.pdf as a reference, though a quite few things had to be changed up to make it work properly.
-using namespace std;
 GLuint loadDDS(const char * imagepath){
     
     unsigned char header[124];
     FILE *fp;
+    //std::cout << "TID :" <<  strrchr(imagepath,'\\')+1 << std::endl;
     
     fp = fopen(imagepath, "rb");
     if (fp == NULL){
+        //const char * justimagename = strrchr(imagepath,'/');
         fp = fopen(strrchr(imagepath,'\\')+1, "rb");
         if(fp == NULL){//If the base file name doesn't work either, just return
             return 0;
@@ -36,7 +34,7 @@ GLuint loadDDS(const char * imagepath){
     
     //Have to start by reading the header.
     //Most importantly, we need to know our dimensions, the size of the image, if mipmaps are present, and which format of .dds file we're using.
-    //Skyrim can use any format for .dds files, but mostly it should use DXT1 for diffuse and DXT5 due to specular maps using the alpha channel for the normal map.
+    //Skyrim can use any format for .dds files, but mostly it should use DXT5 due to specular maps using the alpha channel for the normal map.
     fread(&header, 124, 1, fp);
     
     unsigned int height      = *(unsigned int*)&(header[8 ]);
@@ -72,6 +70,7 @@ GLuint loadDDS(const char * imagepath){
 
 
     // Create one OpenGL texture
+    
     GLuint textureID;
     glGenTextures(1, &textureID);
     
@@ -93,6 +92,7 @@ GLuint loadDDS(const char * imagepath){
         width = std::max(width/2, (unsigned int)1);
         height = std::max(height/2, (unsigned int)1);
     }
+    //std::cout << textureID << std::endl;
     free(buffer);
     return textureID;
 }

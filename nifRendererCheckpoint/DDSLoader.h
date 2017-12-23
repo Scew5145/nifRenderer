@@ -1,8 +1,6 @@
 #include <sstream>
 #include <iostream>
 #include <fstream>
-#include <string>
-#include <cstring>
 #ifdef __APPLE__
 #include <GLUT/glut.h>
 #else
