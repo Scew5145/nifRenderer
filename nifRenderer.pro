@@ -19,6 +19,9 @@ SOURCES = main.cpp nifRenderer.cpp DDSLoader.cpp nifQGLWidget.cpp viewer.cpp
 LIBS += -Lniflib/build/ -lniflib_static
 LIBS += -lglut -lGLU
 
+#Resources
+RESOURCES = nifRenderer.qrc
+
 # Have to disable a pragma warning that comes from nifLib - I'm not even using the file that the warning comes from, but without doing this it'll spam warnings at you
 QMAKE_CXXFLAGS += -Wno-unknown-pragmas
 

@@ -1,5 +1,6 @@
 #include <QGLWidget>
 #include <QString>
+#include <QtOpenGL>
 
 #include <sstream>
 #include <iostream>
@@ -36,7 +37,6 @@ Q_OBJECT
 private:
 	
 	QPoint pos;
-	
 	int light;      //  Lighting toggle
 	int lightRot;   //  Light rotation toggle
 	int th;         //  Azimuth of view angle
@@ -64,6 +64,11 @@ private:
 	float shiny;  // Shininess (value)
 	int zh;  // Light azimuth
 	float ylight;  // Elevation of light
+	float sFlags[9];
+	
+	// Shader Stuff. Implementing it the same way as CUGL for in case I want to do multiple shaders for presentation
+	QVector<QOpenGLShaderProgram*> shader; // Array of our shaders
+	int mode; // Which shader are we using right now?
 	
 	
 	bool mouse; //Holds mouseclick state
@@ -89,11 +94,15 @@ public:
 	void setNifRotY(int index, int tShapeIndex, float value);
 	void setNifRotZ(int index, int tShapeIndex, float value);
 	void toggleBBoxAllButOne(unsigned int index);
+	
 public slots:
 
 	void resetScene(void); //Resets the scene to default view, clears the nifFiles vector.
 	void generateRandomObject(void); //Generates a random object from the internal list of included .nif objects
 	void loadNifFile(); //Loads an object at the origin with its default translation.
+	void toggleShaderFlags(float flags[8]); //Sets all the shader flags to the desired state.
+	void setShader(int sel); // Select a shader
+	void addShader(QString vert, QString frag, QString names="");
 
 	//void removeNifObject(int objectIndex);
 	//TODO:
@@ -113,6 +122,7 @@ protected:
 	void initializeGL();
 	void paintGL();
 	void resizeGL(int width, int height);
+	void Fatal(QString message);                     // Error handler
 	//void timerEvent(QTimerEvent *event);
 	void mousePressEvent(QMouseEvent*);
 	void mouseReleaseEvent(QMouseEvent*);

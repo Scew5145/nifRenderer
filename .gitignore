@@ -1,2 +1,6 @@
 
 niflib/
+
+*.dds
+*.nif
+nifRendererCheckpoint/

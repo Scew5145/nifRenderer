@@ -26,9 +26,13 @@ class Viewer : public QWidget
 Q_OBJECT
 private:
 	QComboBox* objectList;
+	QGridLayout* layout; // main layout
 	nifQGLWidget* nifRenderWindow;
 	QGridLayout* nifDataLay;
 	QGroupBox* nifDataBox;
+	QGroupBox* shaderFlagBox;
+	QGridLayout* shaderFlagLay;
+	QCheckBox* shaderCheck[9];
 	QString transRotToQString(int triIndex); //Helper function for updating translation/rotation
 public:
 	Viewer(QWidget* parent=0);
@@ -37,6 +41,7 @@ private slots:
 	void getObjectInfo(const QString&);
 	void setNifTransRot(const QString);
 	void resetObjectList(void);
+	void toggledSF(int state);
 };
 
 #endif //VIEWER_H

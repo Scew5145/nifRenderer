@@ -9,13 +9,9 @@
 //
 
 
-// TODO
-// Build the rest of the viewer
-// Debug aggressively
-// Pray it compiles on his computer
-
 #include <sstream>
 #include <iostream>
+#include <fstream>
 #include <stdlib.h>
 #include <time.h>
 #include <string>
@@ -25,6 +21,9 @@
 #else
 #include <GL/glut.h>
 #endif
+
+//QtOpenGL
+#include <QtOpenGL>
 
 //nifRenderer
 #include "nifRenderer.h"
@@ -63,7 +62,6 @@ nifFileController::nifFileController(string _filename, int useRandom = 1){
 	
     vector<NiAVObjectRef> children = root->GetChildren();
     
-    
     for(unsigned int i = 0; i < children.size(); i++){
         if(children[i]->GetType().IsSameType(NiTriShape::TYPE)){
 			vector<float> rotTemp;
@@ -80,16 +78,16 @@ nifFileController::nifFileController(string _filename, int useRandom = 1){
 				triRot.push_back(rotTemp);
 				triTrans.push_back(transTemp);
 			}else{
-				Vector3 transInput = children[i]->GetLocalTranslation();
+				//Vector3 transInput = children[i]->GetLocalTranslation();
 				
 				rotTemp.push_back(0);
 				rotTemp.push_back(0);
 				rotTemp.push_back(0);
 				rotTemp.push_back(0);
 				
-				transTemp.push_back(transInput[0]);
-				transTemp.push_back(transInput[1]);
-				transTemp.push_back(transInput[2]);
+				transTemp.push_back(0);
+				transTemp.push_back(0);
+				transTemp.push_back(0);
 				triTrans.push_back(transTemp);
 				triRot.push_back(rotTemp);
 			}
@@ -137,27 +135,50 @@ nifFileController::nifFileController(string _filename, int useRandom = 1){
             
             //Grab the texture and append it to the texture list.
             triTextureData texDataIterator;
-            
+            shaderProperties sPropTemp;
             //This looks messy but I'm just getting the shader property
             BSLightingShaderPropertyRef lsProperties = DynamicCast<BSLightingShaderProperty>(DynamicCast<NiTriShape>(children[i])->GetBSProperty(0));
-            
             if(lsProperties != NULL){
+				// Get the shader properties
+				
+				sPropTemp.emissiveColor = lsProperties->GetEmissiveColor();
+				sPropTemp.emissiveMultiple = lsProperties->GetEmissiveMultiple();
+				sPropTemp.specularColor = lsProperties->GetSpecularColor();
+				sPropTemp.specularStrength = lsProperties->GetSpecularStrength();
+				sPropTemp.glossiness = lsProperties->GetGlossiness();
+                
                 texDataIterator.textureFileName = lsProperties->GetTextureSet()->GetTextures();
+                //texDataIterator.textureFileName[4] = "Chitin_e_ebony.dds";
                 //Generate each TriShape's textures
+                // TODO: if the object already exists, don't make a second texture for an object that already exists.
+                // Static texture stuff? Use a flyweight type of thing?
+                // For now this works, though.
                 for(unsigned int j = 0; j < texDataIterator.textureFileName.size(); j++){
                     if(strcmp(texDataIterator.textureFileName[j].c_str(), "") == 0){
                         texDataIterator.textureID.push_back(0);
                     }else{
-                        texDataIterator.textureID.push_back(loadDDS(texDataIterator.textureFileName[j].c_str()));
+						texDataIterator.textureID.push_back(loadDDS(texDataIterator.textureFileName[j].c_str()));
+						//if(j = )
                     }
                     
                 }
             }else{
-            }
+				sPropTemp.emissiveColor.r = 0.0; sPropTemp.emissiveColor.g = 0.0; sPropTemp.emissiveColor.b = 0.0;
+				sPropTemp.emissiveMultiple = 0.0;
+				sPropTemp.specularColor.r = 1.0; sPropTemp.specularColor.g = 1.0; sPropTemp.specularColor.b = 1.0;
+				sPropTemp.specularStrength = 1.0;
+				sPropTemp.glossiness = 32.0;
+			}
+			sProperties.push_back(sPropTemp);
+            // TODO: this might have scoping issues. worth looking at eventually
             triTextures.push_back(texDataIterator);
+            
             
         }
     }
+    // Initialize the triShapes
+    initTris();
+    // TODO: It might be worth removing the root of the NiNode after initialization is done now that all of the data is stored in float arrays.
 }
 
 nifFileController::~nifFileController() {
@@ -173,8 +194,104 @@ nifFileController::~nifFileController() {
 /*~~~~~~~~~~~~~~~~~~~~~~~~~~*/
 /*~~~~~ Draw Functions ~~~~~*/
 /*~~~~~~~~~~~~~~~~~~~~~~~~~~*/
-
-void nifFileController::drawTriShape(NiTriShapeRef tShape, int triID){
+void nifFileController::initTris(){
+	vector<NiAVObjectRef> children = root->GetChildren();
+	int counter = 0;
+	for(unsigned int i = 0; i < children.size(); i++){
+		if(children[i]->GetType().IsSameType(NiTriShape::TYPE)){
+			NiTriShapeRef tShape = DynamicCast<NiTriShape>(children[i]);
+			NiTriShapeDataRef tData = DynamicCast<NiTriShapeData>(tShape->GetData());
+			int numTriangles = tData->GetTriangles().size();
+			triCount.push_back(numTriangles);
+			
+			// check to see if the normals are already stored in the object.
+			// If they aren't, just store a NULL entry in each of the N/B/T arrays.
+			if(tData->GetNormals().size()){ 
+				Norms.push_back(new float[3*3*numTriangles]);
+				Tans.push_back(new float[3*3*numTriangles]);
+				Bitans.push_back(new float[3*3*numTriangles]);
+			}else{
+				Norms.push_back(NULL);
+				Tans.push_back(NULL);
+				Bitans.push_back(NULL);
+			}
+			Verts.push_back(new float[3*3*numTriangles]);
+			
+			TexCoords.push_back(new float[3*2*numTriangles]);
+			if(tData->GetColors().size()){
+				Colors.push_back(new float[3*4*numTriangles]);
+			}else{
+				
+				Colors.push_back(new float(-1));
+			}
+			initTriShape(tShape, counter);
+			counter++;
+		}
+	}
+	
+}
+void nifFileController::initTriShape(NiTriShapeRef tShape, int triID){
+	NiTriShapeDataRef tData = DynamicCast<NiTriShapeData>(tShape->GetData());
+	
+	// Choose the correct float* array to output to:
+	float* oVerts = Verts[triID];
+	float* oNorms = Norms[triID];
+	float* oColors = Colors[triID];
+	float* oTans = Tans[triID];
+	float* oBitans = Bitans[triID];
+	float* oTCoords = TexCoords[triID];
+	// Grab the data from tData that we'll be putting in the float arrays
+	vector<Triangle> tris = tData->GetTriangles();
+	vector<Vector3> verts = tData->GetVertices();
+	vector<Vector3> norms = tData->GetNormals();
+	vector<Vector3> tans = tData->GetTangents();
+	vector<Vector3> bitans = tData->GetBitangents();
+	vector<Color4> vertColors = tData->GetColors();
+	vector<TexCoord> texCoords = tData->GetUVSet(0);
+	if(vertColors.size() != 0){
+		for(unsigned int i = 0; i < tris.size(); i++){
+			Triangle triIterator = tris[i];
+			for(unsigned int j = 0; j < 3; j++){
+				
+				*oColors++ = vertColors[triIterator[j]].r;
+				*oColors++ = vertColors[triIterator[j]].g;
+				*oColors++ = vertColors[triIterator[j]].b;
+				*oColors++ = vertColors[triIterator[j]].a;
+			}
+		}
+	}
+	for(unsigned int i = 0; i < tris.size(); i++){
+		Triangle triIterator = tris[i];
+		for(unsigned int j = 0; j < 3; j++){
+			
+			*oVerts++ = verts[triIterator[j]][0];
+			*oVerts++ = verts[triIterator[j]][1];
+			*oVerts++ = verts[triIterator[j]][2];
+			if(norms.size()){ // if the Normals aren't in tangent space, we won't have per-vertex normals/tans/bitans stored in the object.
+				*oNorms++ = norms[triIterator[j]][0];
+				*oNorms++ = norms[triIterator[j]][1];
+				*oNorms++ = norms[triIterator[j]][2];
+			}else{ // if this is the case, our normals are instead in the tex_n texture ONLY. That means shader shit has to happen. 
+			
+			}
+			if(tans.size()){
+				*oTans++ = tans[triIterator[j]][0];
+				*oTans++ = tans[triIterator[j]][1];
+				*oTans++ = tans[triIterator[j]][2];
+			}
+			if(bitans.size()){
+				*oBitans++ = bitans[triIterator[j]][0];
+				*oBitans++ = bitans[triIterator[j]][1];
+				*oBitans++ = bitans[triIterator[j]][2];
+			}
+			
+			*oTCoords++ = texCoords[triIterator[j]].u;
+			*oTCoords++ = texCoords[triIterator[j]].v;
+		}
+	}
+	
+}
+void nifFileController::drawTriShape(int triID, QOpenGLShaderProgram* shader, float flags[9]){
 	/* 
 	 * Attributes of a NiTriShape and it's Children:
 	 *  NiTriShapes are the base container for any 3d object data in skyrim. 
@@ -194,19 +311,9 @@ void nifFileController::drawTriShape(NiTriShapeRef tShape, int triID){
 	 * Within the NiTriShape node itself, Translation, Rotation, and Scale are notated.
 	 */
 	if(!rendering) return; //if the object is disabled, don't render it.
-	 
-	NiTriShapeDataRef tData = DynamicCast<NiTriShapeData>(tShape->GetData());
 	
-	BSLightingShaderPropertyRef lsProperties = DynamicCast<BSLightingShaderProperty>(tShape->GetBSProperty(0));
+	QOpenGLFunctions glf(QOpenGLContext::currentContext());
 	
-	//Get the texture info
-	
-	
-	//Get the 3d data
-	vector<Triangle> tris = tData->GetTriangles();
-	vector<Vector3> verts = tData->GetVertices();
-	vector<Vector3> norms = tData->GetNormals();
-	vector<TexCoord> texCoords = tData->GetUVSet(0);
 	glPushMatrix();
 	glTranslated(triTrans[triID][0],triTrans[triID][1],triTrans[triID][2]);
 	glRotated(triRot[triID][0],triRot[triID][1],triRot[triID][2],triRot[triID][3]);
@@ -218,37 +325,86 @@ void nifFileController::drawTriShape(NiTriShapeRef tShape, int triID){
 		glTexEnvi(GL_TEXTURE_ENV,GL_TEXTURE_ENV_MODE,GL_MODULATE);
 		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
 		glEnable(GL_TEXTURE_2D);
-		//Bind the diffuse texture (which will always be the first textureID)
-		glBindTexture(GL_TEXTURE_2D,triTextures[triID].textureID[0]);
 	}
 	
-	glShadeModel(GL_SMOOTH);
-	
-	//Set up openGL to draw tris
-	glBegin(GL_TRIANGLES);
-	glColor3f(1,1,1);
-	for(unsigned int i = 0; i < tris.size(); i++){
-		Triangle triIterator = tris[i];
-		Vector3 vertA = verts[triIterator[0]];
-		Vector3 vertB = verts[triIterator[1]];
-		Vector3 vertC = verts[triIterator[2]];
-		Vector3 normA = norms[triIterator[0]];
-		Vector3 normB = norms[triIterator[1]];
-		Vector3 normC = norms[triIterator[2]];
-		
-		glTexCoord2d(texCoords[triIterator[0]].u, texCoords[triIterator[0]].v);
-		glNormal3d(normA[0], normA[1], normA[2]);
-		glVertex3d(vertA[0],vertA[1],vertA[2]);
-		
-		glTexCoord2d(texCoords[triIterator[1]].u, texCoords[triIterator[1]].v);
-		glNormal3d(normB[0], normB[1], normB[2]);
-		glVertex3d(vertB[0],vertB[1],vertB[2]);
-		
-		glTexCoord2d(texCoords[triIterator[2]].u, texCoords[triIterator[2]].v);
-		glNormal3d(normC[0],normC[1], normC[1]);
-		glVertex3d(vertC[0],vertC[1],vertC[2]);
+	//Set the shader flags, find the proper textures
+	GLfloat shaderTexFlags[9];
+	for(unsigned int texIter = 0; texIter < triTextures[triID].textureID.size(); texIter++){
+		if(triTextures[triID].textureID[texIter] != 0){
+			shaderTexFlags[texIter] = 1*flags[texIter];
+			//If there's a texture, bind it to the appropriate slot
+			glActiveTexture(GL_TEXTURE0+texIter);
+			glBindTexture(GL_TEXTURE_2D,triTextures[triID].textureID[texIter]);
+		}else{
+			shaderTexFlags[texIter] = 0;
+		}
 	}
-	glDisable(GL_TEXTURE_2D);
+	if(Norms[triID] == NULL){
+		// We have no stored normals in our model. let the texture handle it by setting shader flag 8 to 1
+		shaderTexFlags[8] = 1*flags[8];
+	}else{
+		shaderTexFlags[8] = 0;
+	}
+	
+	//Texture values
+	shader->setUniformValue("tex_d" ,0); // Diffuse texture
+	shader->setUniformValue("tex_n" ,1); // Normal map texture
+	shader->setUniformValue("tex_g" ,2); // Glow map texture
+	// TODO: greyscale height map in slot 3
+	shader->setUniformValue("tex_e",4); // The cubemap
+	shader->setUniformValue("tex_m",5); // Enviroment/cube mask texture. Controls specular intensity (also controlled by Normal map alpha value if this doesn't exist)
+	shader->setUniformValue("tex_s",6);
+	shader->setUniformValueArray("texFlags",shaderTexFlags, 9,1);
+	
+	// Other render properties
+	QColor eColor; 
+	eColor.setRgbF(sProperties[triID].emissiveColor.r, sProperties[triID].emissiveColor.g, sProperties[triID].emissiveColor.b);
+	QColor sColor;
+	sColor.setRgbF(sProperties[triID].specularColor.r, sProperties[triID].specularColor.g, sProperties[triID].specularColor.b);
+	shader->setUniformValue("emissiveColor",eColor);
+	shader->setUniformValue("emissiveMultiple",sProperties[triID].emissiveMultiple);
+	shader->setUniformValue("specularColor",sColor);
+	shader->setUniformValue("specularStrength", sProperties[triID].specularStrength);
+	shader->setUniformValue("glossiness", sProperties[triID].glossiness);
+	
+	// Point information arrays to the right places
+	glf.glVertexAttribPointer(tanArrayLoc,3,GL_FLOAT,GL_FALSE,0,Tans[triID]);
+	glf.glVertexAttribPointer(bitanArrayLoc,3,GL_FLOAT,GL_FALSE,0,Bitans[triID]);
+	glVertexPointer(3,GL_FLOAT,0,Verts[triID]);
+	glTexCoordPointer(2,GL_FLOAT,0,TexCoords[triID]);
+	glNormalPointer(GL_FLOAT,0,Norms[triID]);
+	
+	//Enable arrays
+	glEnableClientState(GL_VERTEX_ARRAY);
+	glEnableClientState(GL_COLOR_ARRAY);
+	glEnableClientState(GL_NORMAL_ARRAY);
+	glEnableClientState(GL_TEXTURE_COORD_ARRAY);
+	glf.glEnableVertexAttribArray(tanArrayLoc);
+	glf.glEnableVertexAttribArray(bitanArrayLoc);
+	//Point the arrays to the correct locations
+	if(Colors[triID][0] != -1){
+		glColorPointer(4,GL_FLOAT,0,Colors[triID]);
+	}else{
+		glDisableClientState(GL_COLOR_ARRAY);
+		glColor3f(1,1,1);
+	}
+	if(Norms[triID] == NULL){
+		
+		glDisableClientState(GL_NORMAL_ARRAY);
+		glNormal3f(0,0,1);
+		glf.glDisableVertexAttribArray(tanArrayLoc);
+		glf.glDisableVertexAttribArray(bitanArrayLoc);
+		
+	}
+	glDrawArrays(GL_TRIANGLES,0,triCount[triID]*3);
+	
+	
+	glDisableClientState(GL_VERTEX_ARRAY);
+	glDisableClientState(GL_COLOR_ARRAY);
+	glDisableClientState(GL_NORMAL_ARRAY);
+	glDisableClientState(GL_TEXTURE_COORD_ARRAY);
+	glf.glDisableVertexAttribArray(tanArrayLoc);
+	glf.glDisableVertexAttribArray(bitanArrayLoc);
 	glPopMatrix();
 	glEnd();
 	
@@ -260,14 +416,23 @@ void nifFileController::drawBoundingBox(int triID){
 	//Grab the maximum coordinates and minimum coordinates for the associate TriShape
 	vector<float> maxes = maxCoords[triID];
 	vector<float> mins = minCoords[triID];
+	glPushMatrix();
+	glTranslated(triTrans[triID][0],triTrans[triID][1],triTrans[triID][2]);
+	glRotated(triRot[triID][0],triRot[triID][1],triRot[triID][2],triRot[triID][3]);
 	
 	//Draw the box. I'll be drawing them as lines, because you still want to be able to see the actual object!
 	glDisable(GL_LIGHTING);
-	glDisable(GL_TEXTURE_2D);
-	glColor3f(1,1,1);
+	//Disable the textures of the object so that we get white lines instead of... blue, or grey, or red, or piss yellow lines
+	for(unsigned int i = 0; i < 9; i++){
+		glActiveTexture(GL_TEXTURE0 + i);
+		glDisable(GL_TEXTURE_2D);
+	}
+	glActiveTexture(GL_TEXTURE0);
+	
 	
 	glBegin(GL_LINES);
 	//Top 
+	glColor4f(1.f,1.f,1.f,1.f);
 	glVertex3d(maxes[0],maxes[1],maxes[2]); glVertex3d(mins[0],maxes[1],maxes[2]);
 	glVertex3d(maxes[0],maxes[1],maxes[2]); glVertex3d(maxes[0],maxes[1],mins[2]);
 	glVertex3d(mins[0],maxes[1],mins[2]); glVertex3d(mins[0],maxes[1],maxes[2]);
@@ -283,19 +448,23 @@ void nifFileController::drawBoundingBox(int triID){
 	glVertex3d(mins[0],maxes[1],maxes[2]); glVertex3d(mins[0],mins[1],maxes[2]);
 	glVertex3d(mins[0],maxes[1],mins[2]); glVertex3d(mins[0],mins[1],mins[2]);
 	glEnd();
-	//glPopMatrix();
+	glPopMatrix();
 }
 
-void nifFileController::renderObjectTrishapes(){
+void nifFileController::renderObjectTrishapes(QOpenGLShaderProgram* shader, float flags[9]){
 	vector<NiAVObjectRef> children = root->GetChildren();
 	int counter = 0;
 	//If the child is a NiTriShape, pass it to the private function to parse and render the object.
 	for(unsigned int i = 0; i < children.size(); i++){
 		if(children[i]->GetType().IsSameType(NiTriShape::TYPE)){
 			glPushMatrix();
-			drawTriShape(DynamicCast<NiTriShape>(children[i]), counter);
+			shader->bind();
+			drawTriShape(counter, shader, flags);
+			shader->release();
+			
 			drawBoundingBox(counter);
 			glPopMatrix();
+			
 			counter++;
 		}
 	}

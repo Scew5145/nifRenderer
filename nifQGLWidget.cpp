@@ -40,7 +40,9 @@ nifQGLWidget::nifQGLWidget(QWidget* parent)
 	cameraLoc[0] = 0.0;
 	cameraLoc[1] = 100.0;
 	cameraLoc[2] = 0.0;
-	
+	for(int i = 0; i < 9; i++){
+		sFlags[i] = 1;
+	}
 	light=1;      //  Lighting
 
 	QPoint pos;
@@ -57,11 +59,11 @@ nifQGLWidget::nifQGLWidget(QWidget* parent)
 	smooth = 1;  		// Smooth/Flat shading
 	local = 0;  		// Local Viewer Model
 	emission = 0.00;  	// Emission intensity (%)
-	ambient = 0.30;  	// Ambient intensity (%)
+	ambient = 0.50;  	// Ambient intensity (%)
 	diffuse = 1.00; 	// Diffuse intensity (%)
-	specular = 0.00;	// Specular intensity (%)
-	shininess = 0; 		// Shininess (power of two)
-	shiny = 1;  		// Shininess (value)
+	specular = 0.7;	// Specular intensity (%)
+	shininess = 30; 		// Shininess (power of two)
+	shiny = 20;  		// Shininess (value)
 	zh = 90;  			// Light azimuth
 	ylight = 0;  		// Elevation of light
 	lightRot = 1; 			//Light rotation toggle
@@ -112,7 +114,7 @@ void nifQGLWidget::resetScene(){
 	//Reset View
 	th = 0;
 	ph = 270;
-	dim = 100.0;
+	dim = 120.0;
 	fov = 55;
 	
 	//Reset Light
@@ -121,12 +123,12 @@ void nifQGLWidget::resetScene(){
 	smooth = 1;  		
 	local = 0;  		
 	emission = 0.00;  	
-	ambient = 0.70;  	
+	ambient = 0.30;  	
 	diffuse = 1.00; 	
-	specular = 0.00;	
+	specular = 0.70;	
 	shininess = 0; 		
 	shiny = 1;  		
-	zh = 90;  			
+	zh = 90;
 	ylight = 0;  		
 	lightRot = 1;
 	light = 1;
@@ -137,12 +139,14 @@ void nifQGLWidget::resetScene(){
 	}
 	nifFiles.clear();
 	//Clearing the vector will not reset the size of the vector, however. For that, we need to shrink the vector.
-
+	
 	emit clearedScene(); //Let the UI know the clearing of the window is finished.
 }
 
 void nifQGLWidget::initializeGL(){
 	setMouseTracking(true);
+	addShader(":/skyrimPipeline.vert",":/skyrimPipeline.frag", ",,,,,Tangent,Bitangent");
+	glClearColor(0.5,0.5,0.5,1.0);
 }
 
 void nifQGLWidget::resizeGL(int width, int height){
@@ -151,20 +155,34 @@ void nifQGLWidget::resizeGL(int width, int height){
 	project();
 }
 void nifQGLWidget::paintGL(){
-	const double len=2.0;  //  Length of axes
+	const double len=10.0;  //  Length of axes
     //  Erase the window and the depth buffer
     glClear(GL_COLOR_BUFFER_BIT|GL_DEPTH_BUFFER_BIT);
     //  Enable Z-buffering in OpenGL
     glEnable(GL_DEPTH_TEST);
     //  Undo previous transformations
+    glMatrixMode(GL_PROJECTION);
     glLoadIdentity();
+    
+    // Enable Transperancy 
+    //glEnable(GL_BLEND);
+	//glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+	
     //  Perspective - set eye position
-    glPushMatrix();
-    if(ph%360 <= 270){
-		gluLookAt(cameraLoc[0],cameraLoc[1],cameraLoc[2], cameraLoc[0]-(Sin(th)*Cos(ph)),cameraLoc[1]+Sin(ph),cameraLoc[2]+Cos(th)*Cos(ph),0,-1,0);
-	}else{
-		gluLookAt(cameraLoc[0],cameraLoc[1],cameraLoc[2], cameraLoc[0]-(Sin(th)*Cos(ph)),cameraLoc[1]+Sin(ph),cameraLoc[2]+Cos(th)*Cos(ph),0,1,0);
-	}
+    int w = width()/devicePixelRatio();
+    int h = height()/devicePixelRatio();
+    float asp = w/(float)h;
+    double zmin = dim/16;
+    double zmax = dim*16;
+    double ydim = zmin*tan(fov*M_PI/360);
+    double xdim = ydim*asp;
+    glFrustum(-xdim,+xdim,-ydim,+ydim,zmin,zmax);
+    glMatrixMode(GL_MODELVIEW);
+    glLoadIdentity();
+    glTranslated(0,0,-2*dim);
+    glRotated(ph,1,0,0);
+    glRotated(th,0,1,0);
+    
     
         
     if (light)
@@ -177,7 +195,7 @@ void nifQGLWidget::paintGL(){
         //  Light position
         float lightX = lightdistance*Cos(zh);
         float lightZ = lightdistance*Sin(zh);
-        float Position[]  = {lightX,ylight,lightZ,1.0};
+        float Position[]  = {lightX,lightZ,ylight,1.0};
         //  Draw light position as ball (still no lighting here)
         glColor3f(1,1,1);
         ball(Position[0],Position[1],Position[2] , 1);
@@ -201,26 +219,30 @@ void nifQGLWidget::paintGL(){
     }
     else
         glDisable(GL_LIGHTING);
+    
     //  Draw scene
     for(unsigned int i = 0; i < nifFiles.size(); i++){
         glPushMatrix();
         
-        nifFiles[i]->renderObjectTrishapes();
+        nifFiles[i]->renderObjectTrishapes(shader[mode], sFlags);
+        
         glPopMatrix();
         
     }
-    
     //  Draw axes - no lighting from here on
-
-    glColor3f(1,1,1);
+    
     if (axes)
     {
 		glDisable(GL_TEXTURE_2D);
+		glDisable(GL_LIGHTING);
         glBegin(GL_LINES);
+        glColor3f(1,0,0);
         glVertex3d(0.0,0.0,0.0);
         glVertex3d(len,0.0,0.0);
+        glColor3f(0,1,0);
         glVertex3d(0.0,0.0,0.0);
         glVertex3d(0.0,len,0.0);
+        glColor3f(0,0,1);
         glVertex3d(0.0,0.0,0.0);
         glVertex3d(0.0,0.0,len);
         glEnd();
@@ -231,6 +253,8 @@ void nifQGLWidget::paintGL(){
     
     //  Render the scene and make it visible
     glFlush();
+    
+    
     //glutSwapBuffers();
 }
 
@@ -244,6 +268,41 @@ void nifQGLWidget::project(){
     glMatrixMode(GL_MODELVIEW);
 }
 
+void nifQGLWidget::addShader(QString vert,QString frag,QString names){
+	// Taken Directly from CUgl
+   QOpenGLFunctions glf(QOpenGLContext::currentContext());
+   QStringList name = names.split(',');
+   QOpenGLShaderProgram* prog = new QOpenGLShaderProgram;
+   //  Vertex shader
+   if (vert.length() && !prog->addShaderFromSourceFile(QOpenGLShader::Vertex,vert))
+      Fatal("Error compiling "+vert+"\n"+prog->log());
+   //  Fragment shader
+   if (frag.length() && !prog->addShaderFromSourceFile(QOpenGLShader::Fragment,frag))
+      Fatal("Error compiling "+frag+"\n"+prog->log());
+   //  Bind Attribute Locations
+   for (int k=0;k<name.size();k++)
+      if (name[k].length())
+         glf.glBindAttribLocation(prog->programId(),k,name[k].toLatin1().data());
+   //  Link
+   if (!prog->link())
+      Fatal("Error linking shader\n"+prog->log());
+   //  Push onto stack
+   else
+      shader.push_back(prog);
+}
+
+void nifQGLWidget::setShader(int sel)
+{
+   if (sel>=0 && sel<shader.length())
+      mode = sel;
+   //  Request redisplay
+   update();
+}
+
+
+/*~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~*/
+/*~~~~~~~~~~~~ Mouse Events ~~~~~~~~~~~*/
+/*~~~~~~~~~~-~~~~~~~~~~~~~~~~~~~~~~~~~~*/
 void nifQGLWidget::mousePressEvent(QMouseEvent* e){
 	mouse = true;
 	pos = e->pos();
@@ -262,13 +321,9 @@ void nifQGLWidget::mouseMoveEvent(QMouseEvent* e){
 }
 void nifQGLWidget::wheelEvent(QWheelEvent* e){
 	if(e->delta()<0){
-		cameraLoc[0] += 3*Sin(th)*Cos(ph);
-		cameraLoc[1] -= 3*Sin(ph);
-		cameraLoc[2] -= 3*Cos(th)*Cos(ph);
+		dim += 10.0;
 	}else{
-		cameraLoc[0] -= 3*Sin(th)*Cos(ph);
-		cameraLoc[1] += 3*Sin(ph);
-		cameraLoc[2] += 3*Cos(th)*Cos(ph);
+		dim -= 10.0;
 	}
 	update();
 }
@@ -293,9 +348,9 @@ void nifQGLWidget::generateRandomObject(){
 	if(spawncounter%3 == 1){
 		filename = "helmet.nif";
 	}else if(spawncounter%3 == 2){
-		filename = "silverplate01.nif";
+		filename = "cuirass_1.nif";
 	}else if(spawncounter%3 == 0){
-		filename = "upperchair01.nif";
+		filename = "glowingmushroom01.nif";
 	}
 	nifFiles.push_back(new nifFileController(filename, 1));
 	spawncounter++; //Increment our iterator for the next object we spawn
@@ -307,10 +362,12 @@ void nifQGLWidget::loadNifFile(){
 	string filename = "";
 	QString qFileName = QFileDialog::getOpenFileName(this, tr("Open File"), "", tr("NIF files (*.nif)"));
 	filename = qFileName.toStdString();
+	if(filename != ""){
+		nifFiles.push_back(new nifFileController(filename, 0)); //create a new nifFileController with the object's default translation.
+		emit newObj(nifFiles.size()-1, filename);
+		update();
+	}
 	
-	nifFiles.push_back(new nifFileController(filename, 0)); //create a new nifFileController with the object's default translation.
-	emit newObj(nifFiles.size()-1, filename);
-	update();
 } 
 
 
@@ -330,6 +387,18 @@ void nifQGLWidget::toggleBBoxAllButOne(unsigned int index){
 			nifFiles[i]->setRenderingBox(0);
 		}
 	}
+}
+
+void nifQGLWidget::toggleShaderFlags(float flags[9]){
+	for(int i = 0; i < 9; i++){
+		sFlags[i] = flags[i];
+	}
+}
+
+void nifQGLWidget::Fatal(QString message)
+{
+   QMessageBox::critical(this,"CUgl",message);
+   QApplication::quit();
 }
 /*~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~*/
 /*~~~~~~~~ Light Helper Functions ~~~~~~~~*/

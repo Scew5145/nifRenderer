@@ -73,7 +73,7 @@ Viewer::Viewer(QWidget* parent)
 	connect(nifRenderWindow, SIGNAL(clearedScene(void)), this, SLOT(resetObjectList()));
 	
 	//layout
-	QGridLayout* layout = new QGridLayout;
+	layout = new QGridLayout;
 	layout->setColumnStretch(0,100);
 	layout->setColumnMinimumWidth(0,75);
 	layout->setRowStretch(4,100);
@@ -95,12 +95,46 @@ Viewer::Viewer(QWidget* parent)
 	
 	nifDataBox->setLayout(nifDataLay);
 	
+	shaderFlagBox = new QGroupBox("Shader Flags");
+	shaderFlagLay = new QGridLayout;
+	vector<string> title;
+	title.push_back("diffuse");
+	title.push_back("normal");
+	title.push_back("glow");
+	title.push_back("parallax");
+	title.push_back("cube");
+	title.push_back("mask");
+	title.push_back("subsurface");
+	title.push_back("nothing");
+	title.push_back("breakthings");
+	for(int i = 0; i < 3; i++){
+		for(int j = 0; j < 3; j++){
+			shaderCheck[i+j*3] = new QCheckBox(QString(title[i+j*3].c_str()), shaderFlagBox);
+			shaderCheck[i+j*3]->setChecked(true);
+			shaderFlagLay->addWidget(shaderCheck[i+j*3],j,i);
+			connect(shaderCheck[i+j*3],SIGNAL(stateChanged(int)),this,SLOT(toggledSF(int)));
+		}
+	}
+	shaderFlagBox->setLayout(shaderFlagLay);
 	
-	layout->addWidget(nifDataBox,1,1);
+	layout->addWidget(nifDataBox,2,1);
+	layout->addWidget(shaderFlagBox,1,1);
 	layout->addWidget(creationBox,0,1);
 	setLayout(layout);
 };
 
+void Viewer::toggledSF(int state){
+	(void)state;
+	float sf[9];
+	for(int i = 0; i < 9; i++){
+		if(shaderCheck[i]->isChecked()){
+			sf[i] = 1;
+		}else{
+			sf[i] = 0;
+		}
+	}
+	nifRenderWindow->toggleShaderFlags(sf);
+}
 void Viewer::appendNifList(int index, string filename)
 {
 	ostringstream oss;
@@ -159,6 +193,7 @@ void Viewer::getObjectInfo(const QString& str){
 	}
 	
 	//Parse the info string and dump it to the UI
+	nifDataBox->hide();
 	delete nifDataLay;
 	nifDataLay = new QGridLayout;
 	
@@ -233,6 +268,7 @@ void Viewer::getObjectInfo(const QString& str){
 	//nifDataLay->addWidget(new QLabel("Rotation"),2,0);
 	//nifDataLay->addWidget(rotAngle,2,1); nifDataLay->addWidget(rotX,2,2); nifDataLay->addWidget(rotY,2,3); nifDataLay->addWidget(rotZ,2,4);
 	nifDataBox->setLayout(nifDataLay);
+	nifDataBox->show();
 }
 
 //Helper function for combining the information needed to set the object into a passible QString
@@ -285,18 +321,20 @@ void Viewer::setNifTransRot(const QString input){
 
 //Slot for resetting the objectList
 void Viewer::resetObjectList(){
-	delete objectList;
-	//delete nifDataLay;
-
-	//Empty the nifData layout
-	remove(nifDataLay);
+	delete nifDataBox;
+	
+	nifDataBox = new QGroupBox("File Data");
+	nifDataLay = new QGridLayout;
+	nifDataBox->setMaximumWidth(470);
 	objectList = new QComboBox;
+	objectList->addItem("List of Current Nif Objects");
+	nifDataLay->addWidget(objectList,0,0);
 	
 	connect(objectList, SIGNAL(currentIndexChanged(const QString&)), this, SLOT(getObjectInfo(const QString&)));
-
-	objectList->addItem("List of Current Nif Objects");
+	connect(nifRenderWindow, SIGNAL(clearedScene(void)), this, SLOT(resetObjectList()));
 
 	nifDataLay->addWidget(objectList,0,0);
-
+	nifDataBox->setLayout(nifDataLay);
+	layout->addWidget(nifDataBox,2,1);
 	
 }
