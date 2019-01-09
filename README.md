@@ -36,14 +36,3 @@ Use the dropdown menu to select a .nif object in the scene.
 
 Some objects have multiple parts (triShapes) such as the helmet. Right now, these extra parts are rendered in a different rotation and translation for each separate piece. 
 
-# Files included for loading:
-
-- helmet_1.nif
-- upperchair01.nif
-- silverplate01.nif
-- JuggernautCuiriass_1.nif
-
-The final file, the JuggernautCuirass, I made a few years ago. I didn't include the textures, but the idea is that it can be loaded without them.
-
-I wanted to show that I managed to get this program to parse a few of the potential files that .nif can describe.
-
